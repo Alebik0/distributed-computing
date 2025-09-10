@@ -1,0 +1,11 @@
+FROM gitlab.manytask.org:5050/spbgu/distsys/public-2025-fall/base-image:latest
+
+COPY . /opt/shad
+RUN python3 -m pip install /opt/shad/tools/testlib
+RUN cp /opt/shad/.gitlab-ci.yml /opt/shad/.grader-ci.yml  # Create reference for comparison when running tests
+
+RUN find /opt/shad/ -name '*.py' | xargs chmod o-rwx
+
+# debug
+RUN python3 -m pip uninstall -y manytask-checker
+RUN python3 -m pip install git+https://github.com/manytask/checker.git
