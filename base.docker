@@ -8,6 +8,11 @@ RUN apt-get update && \
     apt-get autoremove -qyy && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustc --version && cargo --version
+
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade -r /tmp/requirements.txt
 RUN python3 -m pip install git+https://github.com/manytask/checker.git
