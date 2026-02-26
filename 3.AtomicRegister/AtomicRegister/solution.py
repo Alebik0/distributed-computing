@@ -25,15 +25,13 @@ class ABDRegister(Process):
         # Request: READ_TS {}
         # Response: READ_TS_RESP {"timestamp": <timestamp>, "value": current_value}
         if msg.type == 'READ_TS':
-            print("READ_TS by", sender)
             
-            return ctx.send(Message('READ_TS_RESP', {"timestamp": self._timestamp, "value": self._value}), to=sender)
+            return ctx.send(Message('READ_TS_RESP', {"timestamp": self._timestamp, "value": self._value, "operation": msg['operation']}), to=sender)
             
         # Phase 2 of read/write: update value if timestamp is newer
         # Request: WRITE_VAL {"timestamp": <timestamp>, "value": new_value}
         # Response: WRITE_ACK {}
         elif msg.type == 'WRITE_VAL':
-            print("WRITE_VAL by", sender)
 
             request_timestamp = msg['timestamp']
             request_value = msg['value']
@@ -41,7 +39,7 @@ class ABDRegister(Process):
             if request_timestamp > self._timestamp:
                 self._value = request_value
             
-            return ctx.send(Message('WRITE_ACK', {}), to=sender)
+            return ctx.send(Message('WRITE_ACK', {"operation": msg['operation']}), to=sender)
 
     def on_local_message(self, msg: Message, ctx: Context):
         """Handle local messages for testing purposes."""
@@ -50,7 +48,6 @@ class ABDRegister(Process):
         # Request: GET {}
         # Response: GET_RESP {"value": current_value}
         if msg.type == 'GET':
-            print("(testing) GET")
 
             return ctx.send_local(Message('GET_RESP', {"value": self._value}))
             
@@ -58,7 +55,6 @@ class ABDRegister(Process):
         # Request: PUT {"value": new_value}
         # Response: PUT_RESP {}
         elif msg.type == 'PUT':
-            print("(testing) PUT")
 
             self._value = msg['value']
 
@@ -85,8 +81,9 @@ class ABDClient(Process):
         self._current_operation = None
         self._read_value = None
         self._write_value = None
-        self._read_ts_responces = []
-        self._write_ack_responces = []
+        self._read_ts_responces = {}
+        self._write_ack_responces = {}
+        self._operation_counter = 0
         
 
     def on_local_message(self, msg: Message, ctx: Context):
@@ -97,17 +94,16 @@ class ABDClient(Process):
         # Response: GET_RESP {"value": read_value}
         if msg.type == 'GET':
             # Phase 1: Send READ_TS to all replicas
-            print("GET")
 
             self._current_operation = 'READ'
             self._read_value = None
             self._write_value = None
-            self._read_ts_responces = []
-            self._write_ack_responces = []
+            self._operation_counter += 1
+            self._read_ts_responces[self._operation_counter] = []
+            self._write_ack_responces[self._operation_counter] = []
 
             for reg in self._registers:
-                print("Sending READ_TS to", reg, "by", self._id)
-                ctx.send(Message('READ_TS', {}), to=reg)
+                ctx.send(Message('READ_TS', {"operation": self._operation_counter}), to=reg)
             
             return
         
@@ -116,56 +112,60 @@ class ABDClient(Process):
         # Response: PUT_RESP {}
         elif msg.type == 'PUT':
             # Phase 1: Send READ_TS to all replicas to get current timestamps
-            print("PUT")
 
             self._current_operation = 'WRITE'
             self._read_value = None
             self._write_value = msg['value']
-            self._read_ts_responces = []
-            self._write_ack_responces = []
+            self._operation_counter += 1
+            self._read_ts_responces[self._operation_counter] = []
+            self._write_ack_responces[self._operation_counter] = []
             
             for reg in self._registers:
-                print("Sending READ_TS to", reg, "by", self._id)
-                ctx.send(Message('READ_TS', {}), to=reg)
+                ctx.send(Message('READ_TS', {"operation": self._operation_counter}), to=reg)
 
             return
 
     def on_message(self, msg: Message, sender: str, ctx: Context):
         """Handle responses from replicas."""
-        
+
+        message_operation = msg['operation']
+
         # Response to READ_TS request
         if msg.type == 'READ_TS_RESP':
-            print("READ_TS_RESP by", sender)
+            self._read_ts_responces[message_operation].append(msg)
 
-            self._read_ts_responces.append(msg)
-
-            if len(self._read_ts_responces) == (len(self._registers) + 1) // 2:
+            if len(self._read_ts_responces[message_operation]) == (len(self._registers) + 1) // 2:
                 if self._current_operation == 'READ':
-                    read_value = self._read_ts_responces[0]['value']
-                    read_timestamp = self._read_ts_responces[0]['timestamp']
+                    read_value = self._read_ts_responces[message_operation][0]['value']
+                    read_timestamp = self._read_ts_responces[message_operation][0]['timestamp']
+                    requires_write_back = False
                     
-                    for resp in self._read_ts_responces:
+                    for resp in self._read_ts_responces[message_operation]:
                         if resp['timestamp'] > read_timestamp:
                             read_value = resp['value']
                             read_timestamp = resp['timestamp']
+                            requires_write_back = True
                     
                     # WRITE-BACK phase
                     self._read_value = read_value
 
-                    for reg in self._registers:
-                        ctx.send(Message('WRITE_VAL', {'timestamp': read_timestamp, 'value': read_value}), to=reg)
-                    
+                    if requires_write_back:
+                        for reg in self._registers:
+                            ctx.send(Message('WRITE_VAL', {'timestamp': read_timestamp, 'value': read_value, "operation": message_operation}), to=reg)
+                    else:
+                        ctx.send_local(Message('GET_RESP', {"value": self._read_value}))
+
                     return
                 elif self._current_operation == 'WRITE':
-                    read_timestamp = self._read_ts_responces[0]['timestamp']
+                    read_timestamp = self._read_ts_responces[message_operation][0]['timestamp']
                     
-                    for resp in self._read_ts_responces:
+                    for resp in self._read_ts_responces[message_operation]:
                         if resp['timestamp'] > read_timestamp:
                             read_timestamp = resp['timestamp']
 
                     # WRITE phase
                     for reg in self._registers:
-                        ctx.send(Message('WRITE_VAL', {'timestamp': read_timestamp + 1, 'value': self._write_value}), to=reg)
+                        ctx.send(Message('WRITE_VAL', {'timestamp': read_timestamp + 1, 'value': self._write_value, "operation": message_operation}), to=reg)
                     
                     return
             
@@ -173,11 +173,10 @@ class ABDClient(Process):
         
         # Response to WRITE_VAL request
         elif msg.type == 'WRITE_ACK':
-            print("WRITE_ACK by", sender)
 
-            self._write_ack_responces.append(msg)
+            self._write_ack_responces[message_operation].append(msg)
 
-            if len(self._write_ack_responces) == (len(self._registers) + 1) // 2:
+            if len(self._write_ack_responces[message_operation]) == (len(self._registers) + 1) // 2:
                 if self._current_operation == 'READ':
                     ctx.send_local(Message('GET_RESP', {"value": self._read_value}))
                 elif self._current_operation == 'WRITE':
