@@ -1,5 +1,5 @@
 from anysystem import Process, Context, Message
-from typing import List
+from typing import List, Optional, Dict
 
 
 class ABDRegister(Process):
@@ -74,6 +74,12 @@ class ABDClient(Process):
     
     Both READ and WRITE operations use both phases!
     """
+    _current_operation: Optional[str]
+    _read_value: Optional[str]
+    _write_value: Optional[str]
+    _read_ts_responces: Dict[int, List[Message]]
+    _write_ack_responces: Dict[int, List[Message]]
+    _operation_counter: int
     
     def __init__(self, process_id: str, register_ids: List[str]):
         self._id = process_id
