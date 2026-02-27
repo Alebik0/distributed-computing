@@ -91,16 +91,14 @@ class Proposer(Process):
                 chosen_accepted_number = None
                 chosen_accepted_value = None
 
-                for proposal_number, accepted_number, accepted_value in self._promise_quorum[msg['operation']]:
+                for _, accepted_number, accepted_value in self._promise_quorum[msg['operation']]:
                     if accepted_number is not None and \
                             (chosen_accepted_number is None or chosen_accepted_number < accepted_number):
                         chosen_accepted_number = accepted_number
                         chosen_accepted_value = accepted_value
+                        self._chosen_value[msg['operation']] = accepted_number, accepted_value
                 
-                if chosen_accepted_number is None:
-                    chosen_accepted_number, chosen_accepted_value = self._chosen_value[msg['operation']]
-                else:
-                    self._chosen_value[msg['operation']] = chosen_accepted_number, chosen_accepted_value
+                chosen_accepted_number, chosen_accepted_value = self._chosen_value[msg['operation']]
 
                 for acceptor_id in self._acceptor_ids:
                     message = Message('ACCEPT', 
@@ -114,7 +112,7 @@ class Proposer(Process):
             if len(self._accepted_quorum[msg['operation']]) == (len(self._acceptor_ids) + 1) // 2:
                 # Build up quorum
                 for accepted_number, accepted_value in self._accepted_quorum[msg['operation']]:
-                    if accepted_number is None or accepted_number > list(self._chosen_value[msg['operation']][0]):
+                    if accepted_number is None or list(accepted_number) > list(self._chosen_value[msg['operation']][0]):
                         # Restart
                         return self.propose_request_handle(self._chosen_value[msg['operation']][1], ctx)
                 
