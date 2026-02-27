@@ -2,7 +2,7 @@ from anysystem import Context, Message, Process
 from typing import List, Optional, Tuple, Dict
 
 
-ProposalNumber = Tuple[str, int]
+ProposalNumber = Tuple[int, str]
 
 
 class Acceptor(Process):
