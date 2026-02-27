@@ -1,6 +1,5 @@
 from anysystem import Context, Message, Process
-from typing import List, Optional, Tuple, Dict, Any
-import json
+from typing import List, Optional, Tuple, Dict
 
 
 ProposalNumber = Tuple[str, int]
@@ -8,6 +7,9 @@ Proposal = Tuple[ProposalNumber, str]
 
 
 class Acceptor(Process):
+    _proposal_number: Optional[ProposalNumber]
+    _accepted_number: Optional[ProposalNumber]
+    _accepted_value: Optional[str]
 
     def __init__(self):
         self._proposal_number = None
@@ -47,6 +49,12 @@ class Acceptor(Process):
 
 
 class Proposer(Process):
+    _process_id: str
+    _acceptor_ids: List[str]
+    _counter: int
+    _promise_quorum: Dict[int, List[Message]]
+    _accepted_quorum: Dict[int, List[Message]]
+    _chosen_value: Tuple[ProposalNumber, str]
 
     def __init__(self, process_id: str, acceptor_ids: List[str]):
         self._process_id = process_id
