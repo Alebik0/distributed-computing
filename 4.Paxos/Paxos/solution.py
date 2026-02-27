@@ -51,8 +51,8 @@ class Proposer(Process):
     _process_id: str
     _acceptor_ids: List[str]
     _counter: int
-    _promise_quorum: Dict[int, List[Message]]
-    _accepted_quorum: Dict[int, List[Message]]
+    _promise_quorum: Dict[int, Tuple[ProposalNumber, ProposalNumber, str]]
+    _accepted_quorum: Dict[int, Tuple[ProposalNumber, str]]
     _chosen_value: Dict[int, Tuple[ProposalNumber, str]]
 
     def __init__(self, process_id: str, acceptor_ids: List[str]):
